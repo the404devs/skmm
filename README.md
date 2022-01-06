@@ -1,1 +1,1 @@
-# skmm
+# Skyrim Mod Manager
