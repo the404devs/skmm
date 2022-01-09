@@ -1,6 +1,10 @@
-import os, sys, json, shutil, datetime
+VER = "0.0.1"
+DATE = "2022-01-09"
+AUTHOR = "Owen Bowden"
+
+import os, sys, json, shutil, datetime, webbrowser
 from PyQt6.QtCore import QMimeData, QSize, Qt
-from PyQt6.QtGui import QAction, QIcon, QDrag, QWindow
+from PyQt6.QtGui import QAction, QDrag, QPixmap
 from PyQt6.QtWidgets import (
 	QApplication,
 	QDialog,
@@ -8,7 +12,6 @@ from PyQt6.QtWidgets import (
 	QFormLayout,
 	QHBoxLayout,
 	QLabel,
-	QLayout,
 	QLineEdit,
 	QMainWindow,
 	QPushButton,
@@ -18,9 +21,6 @@ from PyQt6.QtWidgets import (
 	QWidget
 )
 
-VER = "0.0.1"
-DATE = "2022-01-07"
-
 class MainWindow(QMainWindow):
 	def __init__(self):
 		super().__init__()
@@ -28,7 +28,6 @@ class MainWindow(QMainWindow):
 		self.unsaved_changes = False
 		self.setWindowTitle("SKMM " + VER)
 		self.setAcceptDrops(True)
-		# self.setFixedSize(800, 800)
 		self.layout = QVBoxLayout()
 
 		app.aboutToQuit.connect(self.closeEvent)
@@ -48,29 +47,26 @@ class MainWindow(QMainWindow):
 
 		button_config = QAction("Config", self)
 		button_config.setToolTip("Configure SKMM")
-		toolbar.addAction(button_config)
 		button_config.triggered.connect(self.configClicked)
+		toolbar.addAction(button_config)
 
 		button_refresh = QAction("Refresh", self)
 		button_refresh.setToolTip("Refresh mod list, adding new ESPs not yet listed.")
+		button_refresh.triggered.connect(self.refreshClicked)
 		toolbar.addAction(button_refresh)
-		# TODO: Add refresh function
 
 		button_save = QAction("Save", self)
 		button_save.setToolTip("Save current mod list")
-		toolbar.addAction(button_save)
 		button_save.triggered.connect(self.save)
+		toolbar.addAction(button_save)
 
 		button_about = QAction("About", self)
 		button_about.setToolTip("About SKMM")
+		button_about.triggered.connect(self.aboutClicked)
 		toolbar.addAction(button_about)
-		# TODO: Add about dialog
-		button_about.triggered.connect(genocide)
+
 		self.setGeometry(600, 100, 610, 900)
-		qr = self.frameGeometry()
-		cp = self.screen().availableGeometry().center()
-		qr.moveCenter(cp)
-		self.move(qr.topLeft())
+		centreWindow(self)
 		self.setCentralWidget(self.scroll)
 		self.show()
 
@@ -83,7 +79,6 @@ class MainWindow(QMainWindow):
 		pos = e.position()
 		widget = e.source()
 		for n in range(self.layout.count()):
-			# Get the widget at each index in turn.
 			w = self.layout.itemAt(n).widget()
 			if pos.y() + window.scroll.verticalScrollBar().value() <= w.y() + w.size().height() // 2:
 				self.layout.insertWidget(n-1, widget)
@@ -107,13 +102,22 @@ class MainWindow(QMainWindow):
 		window.setWindowTitle("SKMM " + VER)
 
 	def configClicked(self):
-		print("Config clicked")
 		self.config_dialog = ConfigDialog(config)
-		# config_dialog.show()
+
+	def aboutClicked(self):
+		self.about_dialog = AboutDialog()
+	
+	def refreshClicked(self):
+		if window.unsaved_changes:
+			dlg = SaveWarningDialog("refresh the list")
+			if dlg.exec():
+				print("Refreshing mod list...")
+				genocide()
+				populate_ui()
 
 	def closeEvent(self, e):
 		if window.unsaved_changes:
-			dlg = SaveWarningDialog()
+			dlg = SaveWarningDialog("quit")
 			if not dlg.exec():
 				e.ignore()
 				return
@@ -123,7 +127,7 @@ class MainWindow(QMainWindow):
 class ModBar(QWidget):
 	def __init__(self, str):
 		super().__init__()
-		self.layout = QHBoxLayout()
+		layout = QHBoxLayout()
 		name = str
 		color = "#ff0000"
 		value = False
@@ -131,25 +135,30 @@ class ModBar(QWidget):
 			name = str[1:]
 			color = "#00ff00"
 			value = True
+		if str.startswith("@"):
+			name = str[1:]
+			color = "#0000ff"
+			value = False
 
-		self.num_label = QLabel("")
-		self.num_label.setFixedSize(QSize(25, 20))
-		self.num_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-		self.layout.addWidget(self.num_label)
+		drag_label = QLabel(" 🡙")
+		drag_label.setToolTip("Drag to reorder")
+		drag_label.setFixedSize(QSize(25, 25))
+		drag_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+		layout.addWidget(drag_label)
 
 		self.button = QPushButton(name)
-		self.button.width = 50
+		self.button.setFixedHeight(25)
 		self.button.setProperty("mod_enabled", value)
 		self.button.setStyleSheet("color: " + color)
 		self.button.clicked.connect(self.toggle)
-		self.layout.addWidget(self.button)
+		layout.addWidget(self.button)
 
-		self.drag_label = QLabel(" 🡙")
-		self.drag_label.setToolTip("Drag to reorder")
-		self.drag_label.setFixedSize(QSize(50, 50))
-		self.layout.addWidget(self.drag_label)
+		self.num_label = QLabel("")
+		self.num_label.setFixedSize(QSize(40, 25))
+		layout.addWidget(self.num_label)
 
-		self.setLayout(self.layout)
+		# self.setStyleSheet("border: 1px solid #ffffff;")
+		self.setLayout(layout)
 
 	def toggle(self):
 		window.unsaved_changes = True
@@ -157,13 +166,15 @@ class ModBar(QWidget):
 		self.button.setProperty("mod_enabled", not self.button.property("mod_enabled"))
 		self.button.setStyleSheet("color: " + ("#00ff00" if self.button.property("mod_enabled") else "#ff0000"))
 		print(self.button.text() + " is now: " + str(self.button.property("mod_enabled")))
-		print(window.scroll.verticalScrollBar().value())
 
 	def mouseMoveEvent(self, e):
 		if e.buttons() == Qt.MouseButton.LeftButton:
 			drag = QDrag(self)
 			mime = QMimeData()
 			drag.setMimeData(mime)
+			pixmap = QPixmap(self.size())
+			self.render(pixmap)
+			drag.setPixmap(pixmap)
 			drag.exec(Qt.DropAction.MoveAction)
 
 class ConfigDialog(QWidget):
@@ -174,10 +185,7 @@ class ConfigDialog(QWidget):
 		self.config = config
 		self.setWindowTitle("SKMM Config")
 		self.setGeometry(600, 100, 610, 450)
-		qr = self.frameGeometry()
-		cp = self.screen().availableGeometry().center()
-		qr.moveCenter(cp)
-		self.move(qr.topLeft())
+		centreWindow(self)
 		self.setLayout(layout)
 
 		label1 = QLabel("Plugin Path:")
@@ -211,22 +219,53 @@ class ConfigDialog(QWidget):
 		self.close()
 
 class SaveWarningDialog(QDialog):
-    def __init__(self):
-        super().__init__()
+	def __init__(self, action):
+		super().__init__()
+		self.setWindowTitle("Unsaved Changes")
 
-        self.setWindowTitle("Unsaved Changes")
+		QBtn = QDialogButtonBox.StandardButton.Yes | QDialogButtonBox.StandardButton.No
+		buttonBox = QDialogButtonBox(QBtn)
+		buttonBox.accepted.connect(self.accept)
+		buttonBox.rejected.connect(self.reject)
 
-        QBtn = QDialogButtonBox.StandardButton.Yes | QDialogButtonBox.StandardButton.No
+		layout = QVBoxLayout()
+		message = QLabel("You have unsaved changes. Are you sure you want to " + action + "?")
+		layout.addWidget(message)
+		layout.addWidget(buttonBox)
+		self.setLayout(layout)
 
-        self.buttonBox = QDialogButtonBox(QBtn)
-        self.buttonBox.accepted.connect(self.accept)
-        self.buttonBox.rejected.connect(self.reject)
+class AboutDialog(QWidget):
+	def __init__(self):
+		super().__init__()
+		self.setWindowTitle("About SKMM")
+		layout = QVBoxLayout()
+		message = QLabel("Version: " + VER + " (" + DATE + ")\n\n" + "Created by: " + AUTHOR)
+		button = QPushButton("GitHub")
+		button.clicked.connect(self.githubButton)
+		layout.addWidget(message)
+		layout.addWidget(button)
+		self.setLayout(layout)
+		centreWindow(self)
+		self.show()
 
-        self.layout = QVBoxLayout()
-        message = QLabel("You have unsaved changes. Are you sure you want to quit?")
-        self.layout.addWidget(message)
-        self.layout.addWidget(self.buttonBox)
-        self.setLayout(self.layout)
+	def githubButton(self):
+		webbrowser.open("https://github.com/the404devs/skmm", new=2)
+
+class ModDialog(QDialog):
+	def __init__(self, str):
+		super().__init__()
+		self.setWindowTitle("Mods Added/Removed.")
+
+		QBtn = QDialogButtonBox.StandardButton.Ok
+		buttonBox = QDialogButtonBox(QBtn)
+		buttonBox.accepted.connect(self.accept)
+		buttonBox.rejected.connect(self.reject)
+
+		layout = QVBoxLayout()
+		message = QLabel(str)
+		layout.addWidget(message)
+		layout.addWidget(buttonBox)
+		self.setLayout(layout)
 
 def parse_config():
 	path = "./config.json"
@@ -253,6 +292,7 @@ def populate_ui():
 					arr.append(line.strip())
 					bar = ModBar(line.strip())
 					window.layout.addWidget(bar)
+		dataScan(arr)
 		numbering()
 		dummy = QLabel(" ")
 		dummy.setFixedHeight(5)
@@ -268,9 +308,61 @@ def numbering():
 		if isinstance(w, ModBar):
 			w.num_label.setText(str(n))
 
+def centreWindow(window):
+	qr = window.frameGeometry()
+	cp = window.screen().availableGeometry().center()
+	qr.moveCenter(cp)
+	window.move(qr.topLeft())
+
+def dataScan(existingModArray):
+	print("Scanning data folder...")
+	data_path = config.get("DataPath")
+	if not data_path:
+		print("No data path is set.\nTell SKMM where to find the data folder in the Config menu.")
+		return
+	print("Current path to data folder: " + data_path)
+	for i in range(len(existingModArray)):
+		if existingModArray[i].startswith("*"):
+			existingModArray[i] = existingModArray[i][1:]
+
+	defaultESM = [
+		"Skyrim.esm",
+		"Update.esm",
+		"Dawnguard.esm",
+		"HearthFires.esm",
+		"Dragonborn.esm"
+	]
+	untrackedMods = []
+	for file in os.listdir(data_path):
+		if (file.endswith(".esp") or file.endswith(".esm") or file.endswith(".esl")) and not file.startswith("cc") and file not in defaultESM:
+			print("Found file: " + file)
+			try:
+				existingModArray.remove(str(file)) # Remove the file if its already listed in plugins.txt
+			except ValueError:
+				untrackedMods.append(file)
+	# Any remaining entries in existingModArray are mods that don't exist in the data folder anymore.
+
+	for n in reversed(range(window.layout.count())):
+		w = window.layout.itemAt(n).widget()
+		if isinstance(w, ModBar):
+			if w.button.text() in existingModArray:
+				print(w.button.text() + " is in the plugins.txt file, but not in the data folder.")
+				window.layout.removeWidget(w)
+				w.setParent(None)
+				w.hide()
+
+	for mod in untrackedMods:
+		print("Found untracked mod: " + mod)
+		bar = ModBar("@"+mod)
+		window.layout.addWidget(bar)
+
+	if existingModArray or untrackedMods:
+		message = "The following mods are no longer in the data folder:\n" + str(existingModArray) + "\n\n" + "The following untracked mods have been added to the list:\n" + str(untrackedMods)
+		dlg = ModDialog(message)
+		dlg.exec()
+
 config = parse_config()
 app = QApplication(sys.argv)
 window = MainWindow()
 populate_ui()
-
 app.exec()
